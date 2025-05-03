@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image to 3D Model Converter</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%23FFD700' stroke='%23997A00' stroke-width='4'/%3E%3Ctext x='32' y='40' text-anchor='middle' font-size='28' fill='%23997A00' font-family='Arial' font-weight='bold'%3E%24%3C/text%3E%3C/svg%3E">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js and loaders for STL preview -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <link  href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
+    <style>
+        .drop-zone {
+            border: 2px dashed #ccc;
+            border-radius: 4px;
+            padding: 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .drop-zone:hover {
+            border-color: #666;
+            background-color: #f5f5f5;
+        }
+        .loading {
+            display: none;
+        }
+        .loading.active {
+            display: block;
+        }
+        /* Circular crop overlay for Cropper.js */
+        #cropper-modal .cropper-crop-box,
+        #cropper-modal .cropper-view-box {
+            border-radius: 50% !important;
+        }
+        #cropper-modal .cropper-view-box {
+            box-shadow: 0 0 0 9999em rgba(0,0,0,0.5);
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <h1 class="text-3xl font-bold text-center mb-8">Image to 3D Model Converter</h1>
+        
+        <div class="max-w-2xl mx-auto bg-white rounded-lg shadow-md p-6">
+            <div id="drop-zone" class="drop-zone mb-4">
+                <p class="text-gray-600">Drag and drop an image here or click to select</p>
+                <input type="file" id="file-input" class="hidden" accept="image/*">
+            </div>
+            
+            <div class="mb-4">
+                <h2 class="text-xl font-semibold mb-2">Conversion Parameters</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Depth Scale</label>
+                        <div class="flex items-center gap-2">
+                            <input type="range" id="depth-scale" min="1" max="20" value="10" class="w-full">
+                            <span id="depth-scale-value" class="w-10 text-right">10</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Edge Weight</label>
+                        <div class="flex items-center gap-2">
+                            <input type="range" id="edge-weight" min="0" max="2" step="0.1" value="1.0" class="w-full">
+                            <span id="edge-weight-value" class="w-10 text-right">1.0</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Point Density</label>
+                        <div class="flex items-center gap-2">
+                            <input type="range" id="point-density" min="1" max="5" value="2" class="w-full">
+                            <span id="point-density-value" class="w-10 text-right">2</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Blur Amount</label>
+                        <div class="flex items-center gap-2">
+                            <input type="range" id="blur-amount" min="0" max="10" value="5" class="w-full">
+                            <span id="blur-amount-value" class="w-10 text-right">5</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Mesh Smoothing</label>
+                        <div class="flex items-center gap-2">
+                            <input type="range" id="mesh-smoothing" min="0" max="5" value="0" class="w-full">
+                            <span id="mesh-smoothing-value" class="w-10 text-right">0</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Reconstruction Method</label>
+                        <select id="reconstruction-method" class="w-full border rounded p-2">
+                            <option value="auto">Auto</option>
+                            <option value="poisson">Poisson</option>
+                            <option value="ball_pivoting">Ball Pivoting</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Model Size (mm)</label>
+                        <input type="number" id="model-size" min="10" max="200" value="50" class="w-full" step="1">
+                        <span class="text-xs text-gray-500">Largest dimension (width or diameter)</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="flex justify-center">
+                <button id="generate-btn" class="bg-blue-500 text-white px-6 py-2 rounded hover:bg-blue-600">
+                    Generate 3D Model
+                </button>
+                <button id="cancel-btn" class="bg-red-500 text-white px-6 py-2 rounded hover:bg-red-600 ml-4 hidden">
+                    Cancel
+                </button>
+            </div>
+            
+            <div id="loading" class="loading mt-4 text-center">
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto"></div>
+                <p class="mt-2 text-gray-600" id="loading-text">Processing...</p>
+            </div>
+            
+            <div id="result" class="mt-4 hidden">
+                <div id="model-viewer" class="w-full h-96 bg-gray-200 rounded"></div>
+                <div class="mt-4 flex justify-center">
+                    <a id="download-link" href="#" class="bg-green-500 text-white px-6 py-2 rounded hover:bg-green-600">
+                        Download STL
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cropping Modal -->
+    <div id="cropper-modal" class="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-lg shadow-lg p-4 max-w-lg w-full">
+            <h2 class="text-lg font-semibold mb-2">Crop Image</h2>
+            <div class="mb-2 flex gap-2 items-center">
+                <span class="text-sm">Crop shape:</span>
+                <button id="cropper-shape-rect" class="px-2 py-1 rounded border border-gray-400 bg-gray-100 text-gray-700 text-xs">Rectangle</button>
+                <button id="cropper-shape-circle" class="px-2 py-1 rounded border border-gray-400 bg-gray-100 text-gray-700 text-xs">Circle</button>
+            </div>
+            <div class="mb-4">
+                <img id="cropper-image" class="max-w-full max-h-96 mx-auto rounded border" src="" alt="Crop preview">
+            </div>
+            <div class="flex justify-end gap-2">
+                <button id="cropper-cancel" class="px-4 py-2 rounded bg-gray-300 hover:bg-gray-400">Cancel</button>
+                <button id="cropper-confirm" class="px-4 py-2 rounded bg-blue-500 text-white hover:bg-blue-600">Crop & Continue</button>
+            </div>
+        </div>
+    </div>
+</body>
+</html> 
